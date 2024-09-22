@@ -1,20 +1,60 @@
 import torch
-import torch.nn.functional as f
+import torch.nn as nn
 
+class SmoothMaxPool1D(nn.Module):
+    def __init__(self, kernel_size, stride, temperature=0.01):
+        super(SmoothMaxPool1D, self).__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.temperature = temperature
 
-def smooth_MaxPool2d(input, kernel_size, stride, padding=0, ceil_mode=False, count_include_pad=True):
-    return torch.log(f.avg_pool2d(input=torch.exp(input), kernel_size=kernel_size, stride=stride,
-                                  padding=padding, ceil_mode=ceil_mode,
-                                  count_include_pad=count_include_pad, divisor_override=1))
+    def forward(self, x):
+        batch_size, channels, length = x.size()
+        out_length = (length - self.kernel_size) // self.stride + 1
+        
+        unfolded = x.unfold(2, self.kernel_size, self.stride)
+        output = torch.logsumexp(unfolded / self.temperature, dim=-1) * self.temperature
+        
+        return output
 
+class SmoothMaxPool2D(nn.Module):
+    def __init__(self, kernel_size, stride, temperature=0.01):
+        super(SmoothMaxPool2D, self).__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.temperature = temperature
 
-def smooth_MaxPool3d(input, kernel_size, stride, padding=0, ceil_mode=False, count_include_pad=True):
-    return torch.log(f.avg_pool3d(input=torch.exp(input), kernel_size=kernel_size, stride=stride,
-                                  padding=padding, ceil_mode=ceil_mode,
-                                  count_include_pad=count_include_pad, divisor_override=1))
+    def forward(self, x):
+        batch_size, channels, height, width = x.size()
+        out_height = (height - self.kernel_size) // self.stride + 1
+        out_width = (width - self.kernel_size) // self.stride + 1
+        
+        unfolded = x.unfold(2, self.kernel_size, self.stride).unfold(3, self.kernel_size, self.stride)
+        unfolded = unfolded.contiguous().view(batch_size, channels, out_height, out_width, self.kernel_size, self.kernel_size)
+        
+        output = torch.logsumexp(unfolded / self.temperature, dim=(-2, -1)) * self.temperature
+        
+        return output
 
+class SmoothMaxPool3D(nn.Module):
+    def __init__(self, kernel_size, stride, temperature=0.01):
+        super(SmoothMaxPool3D, self).__init__()
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.temperature = temperature
 
-def smooth_MaxPool1d(input, kernel_size, stride, padding, ceil_mode, count_include_pad):
-    return torch.log(kernel_size * f.avg_pool1d(input=torch.exp(input), kernel_size=kernel_size, stride=stride,
-                                                padding=padding, ceil_mode=ceil_mode,
-                                                count_include_pad=count_include_pad))
+    def forward(self, x):
+        batch_size, channels, depth, height, width = x.size()
+        out_depth = (depth - self.kernel_size) // self.stride + 1
+        out_height = (height - self.kernel_size) // self.stride + 1
+        out_width = (width - self.kernel_size) // self.stride + 1
+        
+        unfolded = x.unfold(2, self.kernel_size, self.stride) \
+                   .unfold(3, self.kernel_size, self.stride) \
+                   .unfold(4, self.kernel_size, self.stride)
+        unfolded = unfolded.contiguous().view(batch_size, channels, out_depth, out_height, out_width,
+                                               self.kernel_size, self.kernel_size, self.kernel_size)
+        
+        output = torch.logsumexp(unfolded / self.temperature, dim=(-2, -1, -3)) * self.temperature
+        
+        return output
